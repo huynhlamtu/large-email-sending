@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: email_system
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 20s
+      timeout: 20s
+      retries: 5
+    command: >
+      bash -c '
+      apt-get update &&
+      apt-get install -y wget &&
+      cd /opt/rabbitmq/plugins &&
+      wget https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/releases/download/v3.12.0/rabbitmq_delayed_message_exchange-3.12.0.ez &&
+      rabbitmq-plugins enable rabbitmq_delayed_message_exchange &&
+      docker-entrypoint.sh rabbitmq-server'
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: email-api
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+          condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - POSTGRES_HOST=postgres
+    restart: unless-stopped
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile.cron_prepare
+    container_name: email-cron
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - POSTGRES_HOST=postgres
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do ./cron_prepare; sleep 10; done"]
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    # container_name: email-consumer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    restart: unless-stopped
+
+volumes:
+  pgdata:

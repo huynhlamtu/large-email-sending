@@ -44,6 +44,8 @@ A scalable email sending system capable of handling **millions of scheduled emai
 - consumer: Consumes messages and sends emails via SMTP
 - log-writer: Batches and logs email delivery results
 
+---
+## ⚙️ Run Locally
 # Build & start the entire system
 docker-compose up --build -d
 
